@@ -192,14 +192,15 @@ def decode_and_merge_id(
 
 
 def search_part_number(
-    query: str, manager: Any, limit: int = 0, partial_match: bool = True
+    query: str, manager: Any, limit: int = 0, partial_match: bool = True,
+    lang: str = "eng",
 ) -> list[dict[str, Any]]:
     """搜索料号（含 FDB 合并）。"""
     fdb = load_fdb()
     results: list[dict[str, Any]] = []
 
     # 1. 解码器精确解析
-    exact = decode_and_merge_pn(query, manager)
+    exact = decode_and_merge_pn(query, manager, lang=lang)
     if exact:
         exact["_match"] = "exact"
         results.append(exact)
@@ -218,7 +219,7 @@ def search_part_number(
                     rec["vendor"] = vendor_key
                     rec["partNumber"] = pn
                     rec["_match"] = "fdb"
-                    results.append(rec)
+                    results.append(translate_output(rec, lang))
                     if limit > 0 and len(results) >= limit:
                         break
             if limit > 0 and len(results) >= limit:
