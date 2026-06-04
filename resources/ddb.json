@@ -73,5 +73,20 @@
       "die": 1
     },
     "density": "4Gb"
+  },
+  "MT41K512M16HA-125:A": {
+    "partNumber": "MT41K512M16HA-125:A",
+    "vendor": "Micron",
+    "type": "DDR3 SDRAM",
+    "deviceWidth": "x16",
+    "voltage": "VDD 1.35_3, VDDQ 1.35_3",
+    "speed": "DDR3-800 PC3-1600 800MHz 1600MTPS 11-11-11",
+    "package": "Unknown",
+    "depth": "Unknown",
+    "generation": "Unknown",
+    "classification": {
+      "die": 1
+    },
+    "density": "8Gb"
   }
 }

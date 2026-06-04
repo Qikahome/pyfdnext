@@ -264,7 +264,7 @@ def search_part_number(
             return False
 
         for vendor_key, vendor_map in fdb.items():
-            if vendor_key == "info" or not isinstance(vendor_map, dict):
+            if vendor_key in ("info", "iddb") or not isinstance(vendor_map, dict):
                 continue
             for pn in vendor_map:
                 if not _matches(pn):
