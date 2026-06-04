@@ -1,6 +1,6 @@
 """pyfdnext HTTP API Server
 
-Compatible with fdnext TS server format: JSON wrapped in HTML <p> tags.
+Compatible with fdnext 3.0 API (new paths) + old paths for FlashDetail.
 
 Usage:
     python -m pyfdnext.server              # 0.0.0.0:8000
@@ -14,7 +14,7 @@ from argparse import ArgumentParser
 from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, Query, Response
+from fastapi import FastAPI, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 _backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -33,7 +33,7 @@ from pyfdnext.translate import translate_output
 
 app = FastAPI(title="pyfdnext API", version="1.0.0")
 
-# CORS: 允许所有来源（供前端跨域调用）
+# CORS: allow all origins (required for web frontend)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -41,99 +41,205 @@ app.add_middleware(
     allow_headers=["*"],
 )
 _manager = get_manager()
+SERVER_NAME = "pyfdnext"
 
 
-# ── helpers ─────────────────────────────────────────────────────
+# ── custom 404 for unmapped paths ────────────────────────────────
+
+@app.exception_handler(404)
+def not_found_handler(request: Request, exc):
+    return Response(
+        content=json.dumps({"status": "not_found", "name": SERVER_NAME}),
+        media_type="application/json; charset=utf-8",
+        status_code=404,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Helpers
+# ═══════════════════════════════════════════════════════════════════
 
 def html_json(payload: dict[str, Any]) -> Response:
-    """Wrap JSON in HTML <p> tag, as FlashDetail expects."""
+    """Wrap JSON in HTML <p> tag (old FlashDetail compat)."""
     raw = json.dumps(payload, ensure_ascii=False, default=str)
     return Response(
         content=f"<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body><p>{raw}</p></body></html>",
         media_type="text/html; charset=utf-8",
     )
 
-
-def ok(data: Any = None) -> Response:
+def old_ok(data: Any = None) -> Response:
     if data is None:
         data = {}
     return html_json({"result": True, "data": data})
 
-
-def fail(msg: str = "Not found") -> Response:
+def old_fail(msg: str = "Not found") -> Response:
     return html_json({"result": False, "message": msg})
 
 
-# ── index ───────────────────────────────────────────────────────
+# ── new result builder (fdnext.result.v1) ────────────────────────
+
+def new_decode_result(
+    operation: str,
+    query: str,
+    decoded: dict[str, Any] | None,
+    lang: str,
+) -> dict[str, Any]:
+    """Build fdnext.result.v1 for decode operations."""
+    result: dict[str, Any] = {
+        "schemaVersion": "fdnext.result.v1",
+        "operation": operation,
+        "status": "ok" if decoded else "not_found",
+        "input": {"query": query},
+        "relations": [],
+        "links": [],
+        "warnings": [],
+        "candidates": [],
+    }
+
+    if decoded:
+        vendor_id = (decoded.get("vendor") or "").lower()
+        result["device"] = {
+            "vendor": {"id": vendor_id, "display": decoded.get("vendor", "?")},
+            "chipKind": _chip_kind(decoded),
+            "productType": decoded.get("type", "?"),
+            "partNumber": decoded.get("partNumber", query),
+            "identifier": decoded.get("flashId", ""),
+        }
+        result["subtitle"] = f"{decoded.get('vendor','?')} {decoded.get('partNumber','')}"
+
+        # blocks
+        blocks: list[dict[str, Any]] = []
+        field_order = [
+            "vendor", "partNumber", "type", "density", "deviceWidth",
+            "cellLevel", "voltage", "generation", "processNode",
+            "die", "plane", "pageSize", "package",
+        ]
+        fields: list[dict[str, Any]] = []
+        for k in field_order:
+            v = decoded.get(k)
+            if v and v not in ("?", "Unknown", "未知", ""):
+                fields.append({"key": k, "value": str(v), "display": str(v)})
+        if fields:
+            blocks.append({"title": "Details", "fields": fields})
+
+        # extra fields not in field_order
+        extra_fields: list[dict[str, Any]] = []
+        for k, v in decoded.items():
+            if k in ("flashId", "_match", "_mode", "_info") or k.startswith("_"):
+                continue
+            if k in field_order:
+                continue
+            if v and v not in ("?", "Unknown", "未知", ""):
+                extra_fields.append({"key": k, "value": str(v), "display": str(v)})
+        if extra_fields:
+            blocks.append({"title": "Extra", "fields": extra_fields})
+
+        result["blocks"] = blocks
+    else:
+        result["device"] = None
+        result["subtitle"] = None
+        result["blocks"] = []
+
+    return result
+
+
+def new_search_result(
+    operation: str,
+    query: str,
+    items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build fdnext.result.v1 for search operations."""
+    result: dict[str, Any] = {
+        "schemaVersion": "fdnext.result.v1",
+        "operation": operation,
+        "status": "ok" if items else "not_found",
+        "input": {"query": query},
+        "device": None,
+        "subtitle": None,
+        "blocks": [],
+        "items": [],
+        "relations": [],
+        "links": [],
+        "warnings": [],
+        "candidates": [],
+    }
+
+    for item in items:
+        fields: list[dict[str, Any]] = []
+        for k in ("vendor", "partNumber", "type", "density", "cellLevel"):
+            v = item.get(k)
+            if v and v not in ("?", "Unknown", "未知", ""):
+                fields.append({"key": k, "value": str(v), "display": str(v)})
+        result["items"].append({
+            "fields": fields,
+            "links": [],
+        })
+
+    return result
+
+
+def _chip_kind(decoded: dict[str, Any]) -> str:
+    t = (decoded.get("type") or "").lower()
+    if "dram" in t:
+        return "dram"
+    if "nand" in t:
+        return "raw_nand"
+    return "unknown"
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  NEW API (fdnext 3.0 paths)
+#  Pure JSON, fdnext.result.v1 / fdnext.capabilities.v2 format
+# ═══════════════════════════════════════════════════════════════════
 
 @app.get("/")
 def index():
-    return ok({
-        "endpoints": ["/", "/info", "/decode", "/decodeId", "/searchPn",
-                       "/searchId", "/summary", "/summaryId", "/capabilities"],
-    })
+    return {"status": "ok", "name": SERVER_NAME, "version": "1.0.0"}
 
 
-@app.get("/info")
-def info():
-    return ok({
-        "ver": "1.0.0",
-        "decoderCount": len(_manager._decoders),
-    })
-
-
-# ── decode / decodeId ───────────────────────────────────────────
-
-@app.get("/decode")
-def decode_pn(
-    pn: str = Query("", description="Part number"),
+@app.get("/parts/decode")
+def parts_decode(
+    query: str = Query("", description="Part number"),
     lang: str = Query("eng", description="Language"),
 ):
-    if not pn:
-        return fail("Missing part number")
-    result = decode_and_merge_pn(pn, _manager, lang=lang)
-    if result is None:
-        return fail("Not found")
-    return ok(result)
+    if not query:
+        return {"status": "invalid_input", "name": SERVER_NAME, "message": "Missing query"}
+    decoded = decode_and_merge_pn(query, _manager, lang=lang)
+    return new_decode_result("part.decode", query, decoded, lang)
 
 
-@app.get("/decodeId")
-def decode_id(
-    id: str = Query("", description="Flash ID hex string"),
-    lang: str = Query("eng", description="Language"),
-):
-    if not id:
-        return fail("Missing Flash Id")
-    result = decode_and_merge_id(id, _manager, lang=lang)
-    if result is None:
-        return fail("Not found")
-    return ok(result)
-
-
-# ── search ──────────────────────────────────────────────────────
-
-@app.get("/searchPn")
-def search_pn(
-    q: str = Query(None, description="Search query"),
-    pn: str = Query(None, description="Alias for q (FlashDetail compat)"),
+@app.get("/parts/search")
+def parts_search(
+    query: str = Query("", description="Search query"),
     lang: str = Query("eng", description="Language"),
     limit: int = Query(10, description="Max results"),
 ):
-    query = pn or q or ""
+    if not query:
+        return {"status": "invalid_input", "name": SERVER_NAME, "message": "Missing query"}
     results = search_part_number(query, _manager, limit=limit, lang=lang)
-    return ok(results)
+    return new_search_result("part.search", query, results)
 
 
-@app.get("/searchId")
-def search_id(
-    id: str = Query("", description="Flash ID to search"),
+@app.get("/identifiers/decode")
+def identifiers_decode(
+    query: str = Query("", description="Flash ID or typed identifier"),
+    lang: str = Query("eng", description="Language"),
+):
+    if not query:
+        return {"status": "invalid_input", "name": SERVER_NAME, "message": "Missing query"}
+    decoded = decode_and_merge_id(query, _manager, lang=lang)
+    return new_decode_result("identifier.decode", query, decoded, lang)
+
+
+@app.get("/identifiers/search")
+def identifiers_search(
+    query: str = Query("", description="Flash ID prefix"),
     lang: str = Query("eng", description="Language"),
     limit: int = Query(10, description="Max results"),
 ):
-    """Search FDB by flash ID prefix. """
-    if not id:
-        return fail("Missing Flash Id")
-    q = id.strip().upper()
+    if not query:
+        return {"status": "invalid_input", "name": SERVER_NAME, "message": "Missing query"}
+    q = query.strip().upper()
     fdb = load_fdb()
     results: list[dict[str, Any]] = []
     for vk, vm in fdb.items():
@@ -150,54 +256,13 @@ def search_id(
                     break
         if limit > 0 and len(results) >= limit:
             break
-    return ok(results)
+    return new_search_result("identifier.search", query, results)
 
 
-# ── summary ─────────────────────────────────────────────────────
-
-@app.get("/summary")
-def summary(
-    pn: str = Query("", description="Part number"),
-    lang: str = Query("eng", description="Language"),
-):
-    if not pn:
-        return fail("Missing part number")
-    result = decode_and_merge_pn(pn, _manager, lang=lang)
-    if result is None:
-        return fail("Not found")
-    # Build a concise summary string like TS engine.getSummary()
-    parts = [
-        f"Vendor: {result.get('vendor','?')}",
-        f"Type: {result.get('type','?')}",
-        f"Density: {result.get('density','?')}",
-        f"Cell: {result.get('cellLevel','?')}",
-    ]
-    return ok(" | ".join(parts))
-
-
-@app.get("/summaryId")
-def summary_id(
-    id: str = Query("", description="Flash ID"),
-    lang: str = Query("eng", description="Language"),
-):
-    if not id:
-        return fail("Missing Flash Id")
-    result = decode_and_merge_id(id, _manager, lang=lang)
-    if result is None:
-        return fail("Not found")
-    parts = [
-        f"Vendor: {result.get('vendor','?')}",
-        f"Type: {result.get('type','?')}",
-        f"Density: {result.get('density','?')}",
-    ]
-    return ok(" | ".join(parts))
-
-
-# ── capabilities ────────────────────────────────────────────────
+# ── capabilities (pure JSON, fdnext.capabilities.v2) ─────────────
 
 @app.get("/capabilities")
 def capabilities(lang: str = Query("eng", description="Language")):
-    """返回纯 JSON（官方 fdnext.capabilities.v2 格式）。"""
     fdb = load_fdb()
     pn_count = sum(len(v) for k, v in fdb.items() if k != "info" and isinstance(v, dict))
     id_count = 0
@@ -212,7 +277,6 @@ def capabilities(lang: str = Query("eng", description="Language")):
     fdb_info = fdb.get("info", {})
     controllers = fdb_info.get("controllers", [])
 
-    # 解码器统计：对比基类方法判断是否支持 PN / ID 解码
     pn_decoder_ids: list[str] = []
     id_decoder_ids: list[str] = []
     base_check_pn = BaseDecoder.check_pn
@@ -223,11 +287,10 @@ def capabilities(lang: str = Query("eng", description="Language")):
         if d.check_id.__func__ is not base_check_id:
             id_decoder_ids.append(d.id)
 
-    # 官方格式：纯 JSON，不包 result/data
     return {
         "schemaVersion": "fdnext.capabilities.v2",
         "server": {
-            "name": "pyfdnext",
+            "name": SERVER_NAME,
             "version": "1.0.0",
         },
         "fdb": {
@@ -256,7 +319,129 @@ def capabilities(lang: str = Query("eng", description="Language")):
     }
 
 
-# ── main ────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════
+#  OLD API (FlashDetail backward compat)
+#  HTML wrapped, {"result": ..., "data": ...} format
+# ═══════════════════════════════════════════════════════════════════
+
+@app.get("/info")
+def old_info():
+    return old_ok({"ver": "1.0.0", "decoderCount": len(_manager._decoders)})
+
+
+@app.get("/decode")
+def old_decode(
+    pn: str = Query("", description="Part number"),
+    lang: str = Query("eng", description="Language"),
+):
+    if not pn:
+        return old_fail("Missing part number")
+    result = decode_and_merge_pn(pn, _manager, lang=lang)
+    if result is None:
+        return old_fail("Not found")
+    return old_ok(result)
+
+
+@app.get("/decodeId")
+def old_decode_id(
+    id: str = Query("", description="Flash ID hex string"),
+    lang: str = Query("eng", description="Language"),
+):
+    if not id:
+        return old_fail("Missing Flash Id")
+    result = decode_and_merge_id(id, _manager, lang=lang)
+    if result is None:
+        return old_fail("Not found")
+    return old_ok(result)
+
+
+@app.get("/searchPn")
+def old_search_pn(
+    q: str = Query(None, description="Search query"),
+    pn: str = Query(None, description="Alias for q"),
+    lang: str = Query("eng", description="Language"),
+    limit: int = Query(10, description="Max results"),
+):
+    query = pn or q or ""
+    results = search_part_number(query, _manager, limit=limit, lang=lang)
+    return old_ok(results)
+
+
+@app.get("/searchId")
+def old_search_id(
+    id: str = Query("", description="Flash ID to search"),
+    lang: str = Query("eng", description="Language"),
+    limit: int = Query(10, description="Max results"),
+):
+    if not id:
+        return old_fail("Missing Flash Id")
+    q = id.strip().upper()
+    fdb = load_fdb()
+    results: list[dict[str, Any]] = []
+    for vk, vm in fdb.items():
+        if vk == "info" or not isinstance(vm, dict):
+            continue
+        for pn, rec in vm.items():
+            ids = rec.get("id", [])
+            if isinstance(ids, list) and any(i.startswith(q) for i in ids):
+                entry = rec.copy()
+                entry["vendor"] = vk
+                entry["partNumber"] = pn
+                results.append(translate_output(entry, lang))
+                if limit > 0 and len(results) >= limit:
+                    break
+        if limit > 0 and len(results) >= limit:
+            break
+    return old_ok(results)
+
+
+@app.get("/summary")
+def old_summary(
+    pn: str = Query("", description="Part number"),
+    lang: str = Query("eng", description="Language"),
+):
+    if not pn:
+        return old_fail("Missing part number")
+    result = decode_and_merge_pn(pn, _manager, lang=lang)
+    if result is None:
+        return old_fail("Not found")
+    parts = [
+        f"Vendor: {result.get('vendor','?')}",
+        f"Type: {result.get('type','?')}",
+        f"Density: {result.get('density','?')}",
+        f"Cell: {result.get('cellLevel','?')}",
+    ]
+    return old_ok(" | ".join(parts))
+
+
+@app.get("/summaryId")
+def old_summary_id(
+    id: str = Query("", description="Flash ID"),
+    lang: str = Query("eng", description="Language"),
+):
+    if not id:
+        return old_fail("Missing Flash Id")
+    result = decode_and_merge_id(id, _manager, lang=lang)
+    if result is None:
+        return old_fail("Not found")
+    parts = [
+        f"Vendor: {result.get('vendor','?')}",
+        f"Type: {result.get('type','?')}",
+        f"Density: {result.get('density','?')}",
+    ]
+    return old_ok(" | ".join(parts))
+
+
+# ── health (old) ────────────────────────────────────────────────
+
+@app.get("/health")
+def old_health():
+    return old_ok({"status": "ok"})
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Main
+# ═══════════════════════════════════════════════════════════════════
 
 def main():
     parser = ArgumentParser(description="pyfdnext HTTP API Server")
