@@ -293,8 +293,8 @@ class MicronDecoder(BaseDecoder):
         if len(pn) == 5 and pn[0] in _MICRON_FBGA_PREFIXES:
             resolved = resolve_micron_fbga(pn)
             if resolved:
-                # DRAM（MT 非 MT29F）→ dram decoder
-                if resolved.startswith("MT") and not resolved.startswith("MT29F"):
+                # DRAM（MT 非 MT29 前缀）→ dram decoder
+                if resolved.startswith("MT") and not resolved.startswith("MT29"):
                     from .dram import DramDecoder
                     return DramDecoder().decode_pn(resolved)
                 # NAND → micron 自己的解码器
@@ -310,8 +310,8 @@ class MicronDecoder(BaseDecoder):
                 if result:
                     result["partNumber"] = pn
                 return result
-            # DRAM 料号
-            if pn.startswith("MT") and not pn.startswith("MT29F"):
+            # DRAM 料号（MT 非 MT29 前缀）
+            if pn.startswith("MT") and not pn.startswith("MT29"):
                 from .dram import DramDecoder
                 return DramDecoder().decode_pn(pn)
             return _decode_mt29(pn)

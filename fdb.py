@@ -79,6 +79,12 @@ def find_part_number(
         rec = vendor_map[base]
         rec["vendor"] = vendor
         return rec
+    # 前缀匹配（FDB key 是料号的前缀，如 MT29E1HT08EMHBB 匹配 MT29E1HT08EMHBBJ4-3:B）
+    for fdb_key in vendor_map:
+        if part_number.startswith(fdb_key) or (base and base.startswith(fdb_key)):
+            rec = vendor_map[fdb_key]
+            rec["vendor"] = vendor
+            return rec
     return None
 
 
@@ -100,6 +106,12 @@ def find_part_number_across_vendors(
             rec = vendor_map[base]
             rec["vendor"] = vendor_key
             return rec
+        # 前缀匹配
+        for fdb_key in vendor_map:
+            if part_number.startswith(fdb_key) or (base and base.startswith(fdb_key)):
+                rec = vendor_map[fdb_key]
+                rec["vendor"] = vendor_key
+                return rec
     return None
 
 

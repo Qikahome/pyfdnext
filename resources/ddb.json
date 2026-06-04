@@ -88,5 +88,20 @@
       "die": 1
     },
     "density": "8Gb"
+  },
+  "MT29E1HT08EMHBBJ4-3:B": {
+    "partNumber": "MT29E1HT08EMHBBJ4-3:B",
+    "vendor": "Micron",
+    "type": "未知",
+    "deviceWidth": "x0",
+    "voltage": "VDD2 1.1, VDDQ 0.6 & 1.1",
+    "speed": "未知",
+    "package": "Unknown",
+    "depth": "Unknown",
+    "generation": "Unknown",
+    "classification": {
+      "die": 1
+    },
+    "density": "0"
   }
 }

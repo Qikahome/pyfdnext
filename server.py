@@ -185,20 +185,25 @@ def _parse_density(val: str, is_dram: bool = False) -> tuple[int | None, str | N
         return None, None, None
     import re
     v = val.strip()
-    m = re.match(r'(\d+)\s*([GTMK])[_\s]?(?:b|bit|ib|byte)?\s*$', v, re.IGNORECASE)
+    m = re.match(r'(\d+(?:\.\d+)?)\s*([GTMK])[_\s]?(?:b|bit|ib|byte)?\s*$', v, re.IGNORECASE)
     if not m:
-        m = re.match(r'(\d+)\s*(GIB|MIB|KIB|GB|MB|KB)\s*$', v, re.IGNORECASE)
+        m = re.match(r'(\d+(?:\.\d+)?)\s*(GIB|MIB|KIB|GB|MB|KB)\s*$', v, re.IGNORECASE)
     if not m:
         return None, None, None
-    num = int(m.group(1))
+    num = float(m.group(1))
     raw_unit = m.group(2).upper()
     has_byte_suffix = bool(re.search(r'[GTMK]B$', v))
     multiplier = {"G": 1024, "T": 1024 * 1024, "M": 1, "K": 1 / 1024}.get(raw_unit, 1)
     value_mbit = int(num * multiplier)
     if has_byte_suffix:
         value_mbit *= 8
-    # display：统一用 8bit 字节单位（GB/TB/MB）
-    if value_mbit >= 8192 and value_mbit % 8192 == 0:
+    # display：统一用 8bit 字节单位（TB/GB/MB）
+    tb = 8192 * 1024  # 1 TB in Mbit
+    if value_mbit >= tb and value_mbit % tb == 0:
+        display = f"{value_mbit // tb}TB"
+    elif value_mbit >= tb:
+        display = f"{value_mbit / tb:.1f}TB"
+    elif value_mbit >= 8192 and value_mbit % 8192 == 0:
         display = f"{value_mbit // 8192}GB"
     elif value_mbit >= 8192:
         display = f"{value_mbit / 8192:.1f}GB"
