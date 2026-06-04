@@ -187,7 +187,7 @@ class DramDecoder(BaseDecoder):
 
         # 厂商名归一化
         vendor_raw = raw.get("Vendor", "Unknown")
-        vendor_map = {"镁光降级/Spectek": "Spectek", "镁光降级": "Spectek"}
+        vendor_map = {"镁光降级/Spectek": "Spectek", "镁光降级": "Spectek", "镁光/Micron": "Micron"}
         vendor_name = vendor_map.get(vendor_raw, vendor_raw)
 
         # Die → classification.die，默认为 1

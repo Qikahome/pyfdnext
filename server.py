@@ -172,15 +172,15 @@ def _eng_vendor_id(name: str) -> str:
 
 def _resolve_chip_kind(decoded: dict[str, Any]) -> str:
     t = (decoded.get("type") or "").lower()
-    if "dram" in t:
+    if "dram" in t or "ddr" in t or "lpddr" in t:
         return "dram"
     if "emmc" in t or "ufs" in t:
         return "managed_nand"
     return "raw_nand"
 
 
-def _parse_density(val: str) -> tuple[int | None, str | None, str | None]:
-    """Parse density string like '16Gb' → (16384, 'Mbit', '16GB')."""
+def _parse_density(val: str, is_dram: bool = False) -> tuple[int | None, str | None, str | None]:
+    """Parse density string like '16Gb' → (16384, 'Mbit', '2GB')."""
     if not val or not isinstance(val, str):
         return None, None, None
     import re
@@ -197,7 +197,7 @@ def _parse_density(val: str) -> tuple[int | None, str | None, str | None]:
     value_mbit = int(num * multiplier)
     if has_byte_suffix:
         value_mbit *= 8
-    # display
+    # display：统一用 8bit 字节单位（GB/TB/MB）
     if value_mbit >= 8192 and value_mbit % 8192 == 0:
         display = f"{value_mbit // 8192}GB"
     elif value_mbit >= 8192:
@@ -225,15 +225,20 @@ def _rel_label(action_name: str, lang: str) -> str:
     return m.get(lang, m.get("eng", action_name))
 
 
-def _make_field(key: str, value: Any, lang: str, importance: str = "secondary") -> dict[str, Any]:
+def _make_field(key: str, value: Any, lang: str, importance: str = "secondary",
+                 decoded: dict[str, Any] | None = None) -> dict[str, Any]:
     """Build a field dict matching fdnext.result.v1 format."""
-    # map key to snake_case
     out_key = _FIELD_KEY.get(key, key)
     label = _label(out_key, lang)
     field: dict[str, Any] = {"key": out_key, "label": label, "value": value, "importance": importance}
 
     if out_key == "density" and isinstance(value, str):
-        v, u, d = _parse_density(value)
+        # 判断是否是 DRAM（影响单位：DRAM 用 Gb，NAND 用 GB）
+        is_dram = False
+        if decoded:
+            t = (decoded.get("type") or "").lower()
+            is_dram = "dram" in t or "ddr" in t or "lpddr" in t
+        v, u, d = _parse_density(value, is_dram=is_dram)
         if v is not None:
             field["value"] = v
             field["unit"] = u
@@ -278,7 +283,7 @@ def _build_blocks(decoded: dict[str, Any], lang: str) -> list[dict[str, Any]]:
     def _field(key: str, imp: str = "secondary") -> dict[str, Any] | None:
         v = decoded.get(key)
         if v and v not in ("?", "Unknown", "未知", ""):
-            return _make_field(key, v, lang, imp)
+            return _make_field(key, v, lang, imp, decoded=decoded)
         return None
 
     # storage block (primary)
@@ -296,7 +301,7 @@ def _build_blocks(decoded: dict[str, Any], lang: str) -> list[dict[str, Any]]:
         for k, imp in [("die", "secondary"), ("ce", "secondary"), ("ch", "secondary")]:
             v = cls.get(k)
             if v and v not in ("?", "Unknown", "?"):
-                geo_fields.append(_make_field(k, v, lang, imp))
+                geo_fields.append(_make_field(k, v, lang, imp, decoded=decoded))
     for k in ("plane", "pageSize"):
         f = _field(k)
         if f:
@@ -324,7 +329,7 @@ def _build_blocks(decoded: dict[str, Any], lang: str) -> list[dict[str, Any]]:
             ctrl = [ctrl]
         blocks.append({"id": "controllers", "label": _block_label("controllers", lang),
                         "importance": "detail",
-                        "fields": [_make_field("controller", ctrl, lang, "secondary")]})
+                        "fields": [_make_field("controller", ctrl, lang, "secondary", decoded=decoded)]})
 
     return blocks
 
@@ -456,9 +461,10 @@ def new_search_result(
         badges = [vendor_name.title() if vendor_name else ""]
         if item.get("type"):
             badges.append(item["type"])
-        fields = list(filter(None, [_make_field(k, item.get(k), lang, "primary")
-                                     for k in ("density", "cellLevel")
-                                     if item.get(k) and item[k] not in ("?", "Unknown", "未知", "")]))
+        fields = list(filter(None, [_make_field(k, item.get(k), lang, "primary",
+                                                   decoded=item)
+                                      for k in ("density", "cellLevel")
+                                      if item.get(k) and item[k] not in ("?", "Unknown", "未知", "")]))
         result["items"].append({
             "label": pn, "device": device,
             "badges": [b for b in badges if b],

@@ -1,7 +1,7 @@
 {
   "MT41K512M16HA-125:A": {
     "partNumber": "MT41K512M16HA-125:A",
-    "vendor": "镁光/Micron",
+    "vendor": "Micron",
     "type": "DDR3 SDRAM",
     "density": "512Mb",
     "deviceWidth": "x16",
@@ -88,5 +88,50 @@
       "die": 1
     },
     "density": "8Gb"
+  },
+  "MT41K256M16TW-107:P": {
+    "partNumber": "MT41K256M16TW-107:P",
+    "vendor": "Micron",
+    "type": "DDR3 SDRAM",
+    "deviceWidth": "x16",
+    "voltage": "VDD 1.35_3, VDDQ 1.35_3",
+    "speed": "DDR3-933 PC3-1866 933MHz 1866MTPS 13-13-13",
+    "package": "Unknown",
+    "depth": "Unknown",
+    "generation": "Unknown",
+    "classification": {
+      "die": 1
+    },
+    "density": "256Mb"
+  },
+  "MT62F1G64D4EK-023 WT:B": {
+    "partNumber": "MT62F1G64D4EK-023 WT:B",
+    "vendor": "Micron",
+    "type": "LPDDR5 Mobile/LPDDR5X Mobile",
+    "deviceWidth": "x64",
+    "voltage": "VDD2H 1.05, VDDQ 0.5_2",
+    "speed": "4266MHz 8533MTPS",
+    "package": "Unknown",
+    "depth": "Unknown",
+    "generation": "Unknown",
+    "classification": {
+      "die": 1
+    },
+    "density": "1Gb"
+  },
+  "MT53E2G32D4NQ-046 WT:E": {
+    "partNumber": "MT53E2G32D4NQ-046 WT:E",
+    "vendor": "Micron",
+    "type": "LPDRR4 Mobile/LPDDR4X Mobile",
+    "deviceWidth": "x32",
+    "voltage": "VDD2 1.1, VDDQ 0.6 & 1.1",
+    "speed": "2133MHz 4266MTPS",
+    "package": "Unknown",
+    "depth": "Unknown",
+    "generation": "Unknown",
+    "classification": {
+      "die": 1
+    },
+    "density": "2Gb"
   }
 }

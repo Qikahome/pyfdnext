@@ -2,7 +2,8 @@
   "micron": {
     "D9PTK": "MT41K128M16JT-125:K",
     "C9BBD": "CT41K512M8RH-125:E R",
-    "D9STQ": "MT41K512M16HA-125:A"
+    "D9STQ": "MT41K512M16HA-125:A",
+    "D9SHD": "MT41K256M16TW-107:P"
   },
   "spectek": {
     "PPE13": "XAA256M16Z90BD8GE",
