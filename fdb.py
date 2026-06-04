@@ -6,6 +6,7 @@
 
 import json
 import os
+import re
 from typing import Any
 
 from .translate import translate_output
@@ -195,33 +196,74 @@ def search_part_number(
     query: str, manager: Any, limit: int = 0, partial_match: bool = True,
     lang: str = "eng",
 ) -> list[dict[str, Any]]:
-    """搜索料号（含 FDB 合并）。"""
+    """搜索料号。
+
+    支持三种模式：
+      - 默认：通配符匹配（* 匹配任意字符，? 匹配单个字符）
+      - ``regex:`` 前缀：正则匹配
+      - 无通配符时：子串包含匹配（同之前行为）。
+    """
     fdb = load_fdb()
     results: list[dict[str, Any]] = []
 
+    # 编译搜索模式
+    match_mode: str | None = None  # None="in" sub-string, "wildcard", "regex"
+    pattern: re.Pattern | None = None
+
+    if query.startswith("regex:"):
+        raw = query[6:]
+        if raw:
+            try:
+                pattern = re.compile(raw, re.IGNORECASE)
+                match_mode = "regex"
+            except re.error:
+                pass
+
+    if match_mode is None:
+        # 默认通配符模式：query 当作 *query* 匹配
+        raw = query.replace("*", ".*").replace("?", ".")
+        if not raw.endswith(".*"):
+            raw = raw + ".*"
+        if not raw.startswith(".*"):
+            raw = ".*" + raw
+        try:
+            pattern = re.compile(raw, re.IGNORECASE)
+            match_mode = "wildcard"
+        except re.error:
+            pass
+
     # 1. 解码器精确解析
-    exact = decode_and_merge_pn(query, manager, lang=lang)
+    exact = decode_and_merge_pn(query, manager, lang=lang) if match_mode is None else None
     if exact:
         exact["_match"] = "exact"
         results.append(exact)
 
-    # 2. FDB 模糊搜索
+    # 2. FDB 搜索
     if partial_match:
         q = query.upper()
+
+        def _matches(pn: str) -> bool:
+            if match_mode == "regex" or match_mode == "wildcard":
+                return bool(pattern.search(pn))
+            if match_mode is None:
+                return q in pn or pn in q
+            return False
+
         for vendor_key, vendor_map in fdb.items():
             if vendor_key == "info" or not isinstance(vendor_map, dict):
                 continue
             for pn in vendor_map:
-                if pn == query.upper() or query.upper() in pn:
-                    if any(r.get("partNumber") == pn for r in results):
-                        continue
-                    rec = vendor_map[pn].copy()
-                    rec["vendor"] = vendor_key
-                    rec["partNumber"] = pn
-                    rec["_match"] = "fdb"
-                    results.append(translate_output(rec, lang))
-                    if limit > 0 and len(results) >= limit:
-                        break
+                if not _matches(pn):
+                    continue
+                if any(r.get("partNumber") == pn for r in results):
+                    continue
+                rec = vendor_map[pn].copy()
+                rec["vendor"] = vendor_key
+                rec["partNumber"] = pn
+                rec["_match"] = match_mode or "substring"
+                results.append(translate_output(rec, lang))
+                if limit > 0 and len(results) >= limit:
+                    break
             if limit > 0 and len(results) >= limit:
                 break
 
