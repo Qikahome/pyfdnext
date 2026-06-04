@@ -15,6 +15,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Query, Response
+from fastapi.middleware.cors import CORSMiddleware
 
 _backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _backend_dir not in sys.path:
@@ -27,9 +28,18 @@ from pyfdnext import (
     get_manager,
     load_fdb,
 )
+from pyfdnext.decoders import BaseDecoder
 from pyfdnext.translate import translate_output
 
 app = FastAPI(title="pyfdnext API", version="1.0.0")
+
+# CORS: 允许所有来源（供前端跨域调用）
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 _manager = get_manager()
 
 
@@ -202,6 +212,17 @@ def capabilities(lang: str = Query("eng", description="Language")):
     fdb_info = fdb.get("info", {})
     controllers = fdb_info.get("controllers", [])
 
+    # 解码器统计：对比基类方法判断是否支持 PN / ID 解码
+    pn_decoder_ids: list[str] = []
+    id_decoder_ids: list[str] = []
+    base_check_pn = BaseDecoder.check_pn
+    base_check_id = BaseDecoder.check_id
+    for d in _manager._decoders:
+        if d.check_pn.__func__ is not base_check_pn:
+            pn_decoder_ids.append(d.id)
+        if d.check_id.__func__ is not base_check_id:
+            id_decoder_ids.append(d.id)
+
     # 官方格式：纯 JSON，不包 result/data
     return {
         "schemaVersion": "fdnext.capabilities.v2",
@@ -220,12 +241,17 @@ def capabilities(lang: str = Query("eng", description="Language")):
                 {"id": "part_numbers", "label": "Part Number Records", "count": pn_count},
                 {"id": "flash_ids", "label": "NAND Flash IDs", "count": id_count},
                 {"id": "controllers", "label": "Controller Models", "count": len(controllers)},
-                {"id": "decoders", "label": "PN Decoders", "count": len(_manager._decoders)},
+                {"id": "pn_decoders", "label": "PN Decoders", "count": len(pn_decoder_ids)},
+                {"id": "id_decoders", "label": "Flash ID Decoders", "count": len(id_decoder_ids)},
             ],
             "controllers": {
                 "count": len(controllers),
                 "items": controllers,
             },
+        },
+        "decoders": {
+            "partNumber": [{"id": did} for did in pn_decoder_ids],
+            "flashId": [{"id": did} for did in id_decoder_ids],
         },
     }
 
