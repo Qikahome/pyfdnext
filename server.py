@@ -250,8 +250,8 @@ def capabilities(lang: str = Query("eng", description="Language")):
             },
         },
         "decoders": {
-            "partNumber": [{"id": did} for did in pn_decoder_ids],
-            "flashId": [{"id": did} for did in id_decoder_ids],
+            "partNumber": [{"id": did, "priority": 950} for did in pn_decoder_ids],
+            "identifier": [{"id": did, "idScheme": "nand.flash_id", "priority": 400} for did in id_decoder_ids],
         },
     }
 
