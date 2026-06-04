@@ -12,8 +12,10 @@ from typing import Any
 from .translate import translate_output
 
 _FDB_PATH = os.path.join(os.path.dirname(__file__), "resources", "fdb.json")
+_MDB_PATH = os.path.join(os.path.dirname(__file__), "resources", "mdb.json")
 
 _fdb_cache: dict[str, Any] | None = None
+_mdb_cache: dict[str, Any] | None = None
 
 # ── 厂商名映射（解码器输出的英文名 → FDB 英文 key） ────────────
 
@@ -41,6 +43,18 @@ def load_fdb() -> dict[str, Any]:
         with open(_FDB_PATH, "r", encoding="utf-8") as f:
             _fdb_cache = json.load(f)
     return _fdb_cache
+
+
+def _load_mdb() -> dict[str, Any]:
+    """加载 mdb.json（FBGA → 料号映射）。"""
+    global _mdb_cache
+    if _mdb_cache is None:
+        if os.path.exists(_MDB_PATH):
+            with open(_MDB_PATH, "r", encoding="utf-8") as f:
+                _mdb_cache = json.load(f)
+        else:
+            _mdb_cache = {}
+    return _mdb_cache
 
 
 def find_part_number(
@@ -262,6 +276,35 @@ def search_part_number(
                 rec["partNumber"] = pn
                 rec["_match"] = match_mode or "substring"
                 results.append(translate_output(rec, lang))
+                if limit > 0 and len(results) >= limit:
+                    break
+            if limit > 0 and len(results) >= limit:
+                break
+
+    # 3. MDB 查询（FBGA/标记码 → 料号）
+    if partial_match:
+        mdb = _load_mdb()
+        q = query.upper()
+        for vendor_key, mapping in mdb.items():
+            if not isinstance(mapping, dict):
+                continue
+            for fbga, pn in mapping.items():
+                if q not in fbga.upper() and q not in pn.upper():
+                    continue
+                if any(r.get("partNumber") == pn for r in results):
+                    continue
+                # 尝试解码映射到的料号
+                decoded = decode_and_merge_pn(pn, manager, lang=lang)
+                if decoded:
+                    decoded["_match"] = "mdb"
+                    results.append(decoded)
+                else:
+                    results.append({
+                        "partNumber": pn,
+                        "vendor": vendor_key,
+                        "type": "DRAM",
+                        "_match": "mdb",
+                    })
                 if limit > 0 and len(results) >= limit:
                     break
             if limit > 0 and len(results) >= limit:

@@ -43,5 +43,35 @@
       "die": 1
     },
     "density": "8Gb"
+  },
+  "XAA256M16Z90BD8GE": {
+    "partNumber": "XAA256M16Z90BD8GE",
+    "vendor": "Spectek",
+    "type": "DDR4",
+    "deviceWidth": "x16",
+    "voltage": "1.2V DDR4",
+    "speed": "未知",
+    "package": "TFBGA 96/144B, 9x14x1.2",
+    "depth": "256M",
+    "generation": "Unknown",
+    "classification": {
+      "die": 1
+    },
+    "density": "4Gb"
+  },
+  "MT41K512M8RH-125:E R": {
+    "partNumber": "MT41K512M8RH-125:E R",
+    "vendor": "Micron",
+    "type": "DDR3 SDRAM",
+    "deviceWidth": "x8",
+    "voltage": "VDD 1.35_3, VDDQ 1.35_3",
+    "speed": "DDR3-800 PC3-1600 800MHz 1600MTPS 11-11-11",
+    "package": "Unknown",
+    "depth": "Unknown",
+    "generation": "Unknown",
+    "classification": {
+      "die": 1
+    },
+    "density": "4Gb"
   }
 }
