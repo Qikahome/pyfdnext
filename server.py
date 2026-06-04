@@ -452,8 +452,9 @@ def new_search_result(
         vendor_name = item.get("vendor", "?")
         vendor_id = _eng_vendor_id(vendor_name)
         pn = item.get("partNumber", "")
+        chip_kind = _resolve_chip_kind(item)
         device: dict[str, Any] = {
-            "domain": "memory", "chipKind": "raw_nand",
+            "domain": "memory", "chipKind": chip_kind,
             "vendor": {"id": vendor_id, "name": vendor_name},
         }
         if pn:
@@ -478,7 +479,7 @@ def new_search_result(
                 "target": {
                     "partNumber": pn,
                     "device": {
-                        "domain": "memory", "chipKind": "raw_nand",
+                        "domain": "memory", "chipKind": chip_kind,
                         "partNumber": pn,
                         "vendor": {"id": vendor_id, "name": vendor_name},
                     },

@@ -76,12 +76,20 @@ def _normalize_density(raw: str | None, width: int = 8) -> str:
         return "Unknown"
     raw = raw.strip().split(",")[0].strip()
 
-    # G（无后缀）= Gigabit → 补 b
+    # G（无后缀）= Gig 字数（深度），需要乘位宽得到总容量
     if raw.endswith("G") and not raw.endswith("GB") and not raw.endswith("Gb"):
-        return raw + "b"
-    # M（无后缀）= Megabit → 补 b
+        num = float(raw[:-1])
+        total = int(num * width * 1024)  # Gig字数 → Mb 总容量
+        if total >= 1024 and total % 1024 == 0:
+            return f"{total // 1024}Gb"
+        return f"{total}Mb"
+    # M（无后缀）= Meg 字数（深度），需要乘位宽得到总容量
     if raw.endswith("M") and not raw.endswith("MB") and not raw.endswith("Mb"):
-        return raw + "b"
+        num = float(raw[:-1])
+        total = int(num * width)  # Meg字数 → Mb 总容量
+        if total >= 1024 and total % 1024 == 0:
+            return f"{total // 1024}Gb"
+        return f"{total}Mb"
 
     # Gb / Mb → 保持
     if raw.endswith("Gb") or raw.endswith("Mb"):
@@ -149,8 +157,21 @@ class DramDecoder(BaseDecoder):
         # dram 前缀 → 先解前置码，是 DDR 直接返回，否则强制查 API
         if full_pn.startswith("DRAM"):
             stripped = full_pn[4:]
+            # 先查缓存（命中直接返回）
+            ddb = _get_ddb()
+            cached = ddb.get(full_pn)
+            if not cached:
+                cached = ddb.get(stripped)
+            if cached:
+                if "density" in cached:
+                    width = int(str(cached.get("width", "8")).lstrip("x"))
+                    cached["density"] = _normalize_density(cached["density"], width)
+                return cached
             resolved = get_manager().decode_pn(stripped)
             if resolved and "DDR" in str(resolved.get("type", "")):
+                _save_to_ddb(full_pn, resolved)
+                if stripped != full_pn:
+                    _save_to_ddb(stripped, resolved)
                 return resolved
             # 不是 DDR（如 Spectek NAND），用解码出的 partNumber 强制查 API
             if resolved:

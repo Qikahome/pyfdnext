@@ -1,80 +1,5 @@
 {
-  "MT41K512M16HA-125:A": {
-    "partNumber": "MT41K512M16HA-125:A",
-    "vendor": "Micron",
-    "type": "DDR3 SDRAM",
-    "density": "512Mb",
-    "deviceWidth": "x16",
-    "voltage": "VDD 1.35_3, VDDQ 1.35_3",
-    "speed": "DDR3-800 PC3-1600 800MHz 1600MTPS 11-11-11",
-    "package": "未知",
-    "depth": "未知",
-    "generation": "未知",
-    "classification": {
-      "die": 1
-    }
-  },
-  "XAA256M16Z90BD8GE": {
-    "partNumber": "XAA256M16Z90BD8GE",
-    "vendor": "镁光降级/Spectek",
-    "type": "DDR4",
-    "deviceWidth": "x16",
-    "voltage": "1.2V DDR4",
-    "speed": "未知",
-    "package": "TFBGA 96/144B, 9x14x1.2",
-    "depth": "256M",
-    "generation": "未知",
-    "classification": {
-      "die": 1
-    },
-    "density": "4Gb"
-  },
-  "NT5CC256M16ER-EK": {
-    "partNumber": "NT5CC256M16ER-EK",
-    "vendor": "南亚/Nanya",
-    "type": "DDR3",
-    "deviceWidth": "x16",
-    "voltage": "SSTL-135 (1.35V, 1.35V)",
-    "speed": "未知",
-    "package": "96-Ball BGA; DDR3",
-    "depth": "256M",
-    "generation": "5th version",
-    "classification": {
-      "die": 1
-    },
-    "density": "4Gb"
-  },
-  "DRAMNT5CC256M16ER-EK": {
-    "partNumber": "NT5CC256M16ER-EK",
-    "vendor": "南亚/Nanya",
-    "type": "DDR3",
-    "deviceWidth": "x16",
-    "voltage": "SSTL-135 (1.35V, 1.35V)",
-    "speed": "未知",
-    "package": "96-Ball BGA; DDR3",
-    "depth": "256M",
-    "generation": "5th version",
-    "classification": {
-      "die": 1
-    },
-    "density": "4Gb"
-  },
   "K4A8G165WC": {
-    "partNumber": "K4A8G165WC",
-    "vendor": "三星/Samsung",
-    "type": "DDR4 SDRAM",
-    "deviceWidth": "x16",
-    "voltage": "Unknown",
-    "speed": "未知",
-    "package": "未知",
-    "depth": "Unknown",
-    "generation": "Unknown",
-    "classification": {
-      "die": 1
-    },
-    "density": "8Gb"
-  },
-  "DRAMK4A8G165WC": {
     "partNumber": "K4A8G165WC",
     "vendor": "三星/Samsung",
     "type": "DDR4 SDRAM",
@@ -102,36 +27,21 @@
     "classification": {
       "die": 1
     },
-    "density": "256Mb"
+    "density": "4Gb"
   },
-  "MT62F1G64D4EK-023 WT:B": {
-    "partNumber": "MT62F1G64D4EK-023 WT:B",
-    "vendor": "Micron",
-    "type": "LPDDR5 Mobile/LPDDR5X Mobile",
-    "deviceWidth": "x64",
-    "voltage": "VDD2H 1.05, VDDQ 0.5_2",
-    "speed": "4266MHz 8533MTPS",
-    "package": "Unknown",
+  "K4A8G165": {
+    "partNumber": "K4A8G165",
+    "vendor": "三星/Samsung",
+    "type": "DDR4 SDRAM",
+    "deviceWidth": "x16",
+    "voltage": "Unknown",
+    "speed": "未知",
+    "package": "未知",
     "depth": "Unknown",
     "generation": "Unknown",
     "classification": {
       "die": 1
     },
-    "density": "1Gb"
-  },
-  "MT53E2G32D4NQ-046 WT:E": {
-    "partNumber": "MT53E2G32D4NQ-046 WT:E",
-    "vendor": "Micron",
-    "type": "LPDRR4 Mobile/LPDDR4X Mobile",
-    "deviceWidth": "x32",
-    "voltage": "VDD2 1.1, VDDQ 0.6 & 1.1",
-    "speed": "2133MHz 4266MTPS",
-    "package": "Unknown",
-    "depth": "Unknown",
-    "generation": "Unknown",
-    "classification": {
-      "die": 1
-    },
-    "density": "2Gb"
+    "density": "8Gb"
   }
 }

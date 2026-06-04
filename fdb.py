@@ -232,8 +232,8 @@ def search_part_number(
         except re.error:
             pass
 
-    # 1. 解码器精确解析
-    exact = decode_and_merge_pn(query, manager, lang=lang) if match_mode is None else None
+    # 1. 解码器精确解析（无论何种模式都尝试）
+    exact = decode_and_merge_pn(query, manager, lang=lang)
     if exact:
         exact["_match"] = "exact"
         results.append(exact)
