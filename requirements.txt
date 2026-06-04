@@ -1,0 +1,3 @@
+# pyfdnext - FlashDetector Python Engine
+# No runtime dependencies required.
+# Optional: fastapi + uvicorn for HTTP server
