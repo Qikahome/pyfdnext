@@ -72,20 +72,28 @@ class DecoderManager:
 
     def decode_pn(self, pn: str) -> dict[str, Any] | None:
         for d in self._decoders:
-            if d.check_pn(pn):
-                result = d.decode_pn(pn)
-                if result:
-                    return result
+            try:
+                if d.check_pn(pn):
+                    result = d.decode_pn(pn)
+                    if result:
+                        return result
+            except Exception as e:
+                print(f"[Decoder] {d.id}.decode_pn error: {e}")
+                continue
         return None
 
     # ── ID 解码 ───────────────────────────────────────────────
 
     def decode_id(self, id_str: str) -> dict[str, Any] | None:
         for d in self._decoders:
-            if d.check_id(id_str):
-                result = d.decode_id(id_str)
-                if result:
-                    return result
+            try:
+                if d.check_id(id_str):
+                    result = d.decode_id(id_str)
+                    if result:
+                        return result
+            except Exception as e:
+                print(f"[Decoder] {d.id}.decode_id error: {e}")
+                continue
         return None
 
     # ── 状态 ───────────────────────────────────────────────────

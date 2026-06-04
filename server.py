@@ -76,6 +76,315 @@ def old_fail(msg: str = "Not found") -> Response:
     return html_json({"result": False, "message": msg})
 
 
+# ── field labels for display ──────────────────────────────────
+
+_FIELD_LABELS: dict[str, str] = {
+    "density": "Density",
+    "cellLevel": "Cell Level",
+    "deviceWidth": "Device Width",
+    "voltage": "Voltage",
+    "package": "Package",
+    "dieCode": "Process",
+    "processNode": "Process",
+    "classification": "Classification",
+    "type": "Type",
+    "generation": "Generation",
+    "pageSize": "Page size",
+    "die": "Die Count",
+    "plane": "Plane Count",
+    "ce": "CE Count",
+    "ch": "Channel Count",
+    "controller": "Controller",
+    "partNumber": "Part Number",
+    "vendor": "Vendor",
+    "densityCode": "Density Code",
+    "packageCode": "Package Code",
+}
+
+_CHIP_KIND: dict[str, str] = {
+    "NAND": "raw_nand",
+    "nand": "raw_nand",
+    "DRAM": "dram",
+    "dram": "dram",
+    "eMMC": "managed_nand",
+    "emmc": "managed_nand",
+    "UFS": "managed_nand",
+    "ufs": "managed_nand",
+}
+
+
+def _resolve_chip_kind(decoded: dict[str, Any]) -> str:
+    t = (decoded.get("type") or "").lower()
+    if "dram" in t:
+        return "dram"
+    if "emmc" in t or "ufs" in t:
+        return "managed_nand"
+    return "raw_nand"
+
+
+def _parse_density(val: str) -> tuple[int | None, str | None, str | None]:
+    """Parse density string like '16Gb' → (16384, 'Mbit', '2GB')."""
+    if not val or not isinstance(val, str):
+        return None, None, None
+    val = val.strip().upper()
+    import re
+    m = re.match(r'(\d+)\s*(GB|GIB|MB|MIB|KB|KIB|GBIT|MBIT|KBIT|G|M|K)B?', val)
+    if not m:
+        # try removing 'b' or 'B' at end
+        m = re.match(r'(\d+)\s*(G|M|K)', val)
+    if not m:
+        # try 'Gb' as gigabit
+        m = re.match(r'(\d+)\s*G\s*B?', val)
+    if m:
+        num = int(m.group(1))
+        unit_str = m.group(2).upper()
+        # convert to Mbit
+        if unit_str.startswith('G') or unit_str.startswith('T'):
+            multiplier = 1024 if 'I' in unit_str else 1000
+            if 'B' in val.upper() and 'I' not in val.upper() and 'bit' not in val.lower():
+                # GByte → Gbit * 8
+                value_mbit = num * multiplier * 8
+            else:
+                value_mbit = num * multiplier
+            if value_mbit < 1000000:
+                display_unit = "Mbit"
+                display_val = value_mbit
+            else:
+                display_val = value_mbit
+                display_unit = "Mbit"
+        elif unit_str.startswith('M'):
+            value_mbit = num
+            display_val = value_mbit
+            display_unit = "Mbit"
+        elif unit_str.startswith('K'):
+            value_mbit = num // 1024 if num >= 1024 else num / 1024
+            display_val = value_mbit
+            display_unit = "Mbit"
+        else:
+            return None, None, None
+
+        # build display string
+        if display_val >= 1024 and display_val % 1024 == 0:
+            display = f"{display_val // 1024}GB"
+        elif display_val >= 1024:
+            display = f"{display_val / 1024:.1f}GB"
+        elif display_val >= 1:
+            display = f"{display_val}Mb"
+        else:
+            display = str(display_val)
+
+        return int(display_val), display_unit, display
+
+    return None, None, None
+
+
+def _make_field(key: str, value: Any, importance: str = "secondary") -> dict[str, Any]:
+    """Build a field dict matching fdnext.result.v1 format."""
+    label = _FIELD_LABELS.get(key, key)
+    field: dict[str, Any] = {"key": key, "label": label, "value": value, "importance": importance}
+
+    # special handling for known fields
+    if key == "density" and isinstance(value, str):
+        v, u, d = _parse_density(value)
+        if v is not None:
+            field["value"] = v
+            field["unit"] = u
+            field["display"] = d
+
+    if key == "deviceWidth" and isinstance(value, str):
+        m = __import__("re").match(r'[xX](\d+)', value)
+        if m:
+            field["value"] = int(m.group(1))
+            field["unit"] = "bit"
+            field["display"] = value
+        else:
+            field["display"] = str(value)
+
+    return field
+
+
+def _make_device(decoded: dict[str, Any], query: str) -> dict[str, Any]:
+    """Build device object."""
+    vendor_name = decoded.get("vendor", "?")
+    vendor_id = vendor_name.lower().replace(" ", "_") if vendor_name and vendor_name != "?" else "unknown"
+    d: dict[str, Any] = {
+        "domain": "memory",
+        "chipKind": _resolve_chip_kind(decoded),
+        "vendor": {"id": vendor_id, "name": vendor_name},
+    }
+    if decoded.get("partNumber"):
+        d["partNumber"] = decoded["partNumber"]
+    if decoded.get("flashId"):
+        d["identifier"] = decoded["flashId"] if isinstance(decoded["flashId"], str) else decoded["flashId"][0]
+    if decoded.get("id"):
+        ids = decoded["id"]
+        if isinstance(ids, list) and ids:
+            d["identifier"] = ids[0]
+    return d
+
+
+def _build_blocks(decoded: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build blocks array from decoded data."""
+    blocks: list[dict[str, Any]] = []
+
+    # ── storage block (primary) ──
+    storage_fields: list[dict[str, Any]] = []
+    for k in ("density", "cellLevel"):
+        v = decoded.get(k)
+        if v and v not in ("?", "Unknown", "未知", ""):
+            storage_fields.append(_make_field(k, v, "primary"))
+    # process/dieCode
+    for k in ("dieCode", "processNode", "generation"):
+        v = decoded.get(k)
+        if v and v not in ("?", "Unknown", "未知", ""):
+            storage_fields.append(_make_field(k, v, "secondary"))
+    if storage_fields:
+        blocks.append({
+            "id": "storage",
+            "label": "Storage",
+            "importance": "primary",
+            "fields": storage_fields,
+        })
+
+    # ── geometry block (secondary) ──
+    geo_fields: list[dict[str, Any]] = []
+    classification = decoded.get("classification")
+    if isinstance(classification, dict):
+        die = classification.get("die")
+        if die and die not in ("?", "Unknown", "?"):
+            geo_fields.append(_make_field("die", die, "secondary"))
+        ce = classification.get("ce")
+        if ce and ce not in ("?", "Unknown", "?"):
+            geo_fields.append(_make_field("ce", ce, "secondary"))
+        ch = classification.get("ch")
+        if ch and ch not in ("?", "Unknown", "?"):
+            geo_fields.append(_make_field("ch", ch, "secondary"))
+    # plane from decoded top level
+    for k in ("die", "plane", "pageSize"):
+        v = decoded.get(k)
+        if v and v not in ("?", "Unknown", "未知", ""):
+            geo_fields.append(_make_field(k, v, "secondary"))
+    if geo_fields:
+        blocks.append({
+            "id": "geometry",
+            "label": "Geometry",
+            "importance": "secondary",
+            "fields": geo_fields,
+        })
+
+    # ── interface block (secondary) ──
+    iface_fields: list[dict[str, Any]] = []
+    for k in ("deviceWidth", "voltage"):
+        v = decoded.get(k)
+        if v and v not in ("?", "Unknown", "未知", ""):
+            iface_fields.append(_make_field(k, v, "secondary"))
+    if iface_fields:
+        blocks.append({
+            "id": "interface",
+            "label": "Interface",
+            "importance": "secondary",
+            "fields": iface_fields,
+        })
+
+    # ── package block (detail) ──
+    pkg_fields: list[dict[str, Any]] = []
+    for k in ("package",):
+        v = decoded.get(k)
+        if v and v not in ("?", "Unknown", "未知", ""):
+            pkg_fields.append(_make_field(k, v, "secondary"))
+    if pkg_fields:
+        blocks.append({
+            "id": "package",
+            "label": "Package",
+            "importance": "detail",
+            "fields": pkg_fields,
+        })
+
+    # ── controllers block (detail) ──
+    ctrl = decoded.get("controller") or decoded.get("t")
+    if ctrl:
+        if isinstance(ctrl, str):
+            ctrl = [ctrl]
+        blocks.append({
+            "id": "controllers",
+            "label": "Controllers",
+            "importance": "detail",
+            "fields": [
+                _make_field("controller", ctrl, "secondary")
+            ],
+        })
+
+    return blocks
+
+
+def _build_relations_for_pn(decoded: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build relations for part decode result (link to identifier decode)."""
+    relations: list[dict[str, Any]] = []
+    ids = decoded.get("id") or decoded.get("flashId")
+    if isinstance(ids, str):
+        ids = [ids]
+    if isinstance(ids, list):
+        for fid in ids:
+            if fid and isinstance(fid, str):
+                relations.append({
+                    "kind": "identifier_for",
+                    "target": {
+                        "identifier": fid,
+                        "idScheme": "nand.flash_id",
+                    },
+                    "action": {
+                        "name": "identifier.decode",
+                        "label": "Decode NAND Flash ID",
+                        "operation": "identifier.decode",
+                        "input": {"query": fid, "constraints": {"idScheme": "nand.flash_id"}},
+                    },
+                })
+    return relations
+
+
+def _build_relations_for_id(decoded: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build relations for identifier decode (link to part decode)."""
+    relations: list[dict[str, Any]] = []
+    fid = decoded.get("id") or decoded.get("flashId")
+    if isinstance(fid, list):
+        fid = fid[0] if fid else None
+    source_id = fid or ""
+    # gather related part numbers from fdb
+    fdb = load_fdb()
+    vendor_name = decoded.get("vendor", "")
+    vendor_key = vendor_name.lower().replace(" ", "_") if vendor_name else ""
+    # find matching PNs in fdb
+    related_pns: list[str] = []
+    for vk, vm in fdb.items():
+        if vk == "info" or not isinstance(vm, dict):
+            continue
+        if vendor_key and vk != vendor_key:
+            continue
+        for pn, rec in vm.items():
+            ids = rec.get("id", [])
+            if isinstance(ids, list) and source_id in ids:
+                related_pns.append((vk, pn))
+                if len(related_pns) >= 20:
+                    break
+        if len(related_pns) >= 20:
+            break
+
+    for vk, pn in related_pns:
+        relations.append({
+            "kind": "identifier_for",
+            "source": {"identifier": source_id, "idScheme": "nand.flash_id"},
+            "target": {"partNumber": pn},
+            "action": {
+                "name": "part.decode",
+                "label": "Decode Part",
+                "operation": "part.decode",
+                "input": {"query": pn, "constraints": {"vendor": vk, "chipKind": "raw_nand"}},
+            },
+        })
+
+    return relations
+
+
 # ── new result builder (fdnext.result.v1) ────────────────────────
 
 def new_decode_result(
@@ -89,7 +398,7 @@ def new_decode_result(
         "schemaVersion": "fdnext.result.v1",
         "operation": operation,
         "status": "ok" if decoded else "not_found",
-        "input": {"query": query},
+        "input": {"query": query, "normalized": query.upper(), "lang": lang, "constraints": {}},
         "relations": [],
         "links": [],
         "warnings": [],
@@ -97,44 +406,29 @@ def new_decode_result(
     }
 
     if decoded:
-        vendor_id = (decoded.get("vendor") or "").lower()
-        result["device"] = {
-            "vendor": {"id": vendor_id, "display": decoded.get("vendor", "?")},
-            "chipKind": _chip_kind(decoded),
-            "productType": decoded.get("type", "?"),
-            "partNumber": decoded.get("partNumber", query),
-            "identifier": decoded.get("flashId", ""),
-        }
-        result["subtitle"] = f"{decoded.get('vendor','?')} {decoded.get('partNumber','')}"
+        # device
+        result["device"] = _make_device(decoded, query)
+
+        # subtitle
+        vendor_name = decoded.get("vendor", "?")
+        pn = decoded.get("partNumber", query)
+        density = decoded.get("density", "")
+        cell = decoded.get("cellLevel", "")
+        subtitle_parts = [f"{vendor_name}", pn]
+        if density:
+            subtitle_parts.insert(1, density)
+        if cell:
+            subtitle_parts.append(cell)
+        result["subtitle"] = " · ".join(subtitle_parts)
 
         # blocks
-        blocks: list[dict[str, Any]] = []
-        field_order = [
-            "vendor", "partNumber", "type", "density", "deviceWidth",
-            "cellLevel", "voltage", "generation", "processNode",
-            "die", "plane", "pageSize", "package",
-        ]
-        fields: list[dict[str, Any]] = []
-        for k in field_order:
-            v = decoded.get(k)
-            if v and v not in ("?", "Unknown", "未知", ""):
-                fields.append({"key": k, "value": str(v), "display": str(v)})
-        if fields:
-            blocks.append({"title": "Details", "fields": fields})
+        result["blocks"] = _build_blocks(decoded)
 
-        # extra fields not in field_order
-        extra_fields: list[dict[str, Any]] = []
-        for k, v in decoded.items():
-            if k in ("flashId", "_match", "_mode", "_info") or k.startswith("_"):
-                continue
-            if k in field_order:
-                continue
-            if v and v not in ("?", "Unknown", "未知", ""):
-                extra_fields.append({"key": k, "value": str(v), "display": str(v)})
-        if extra_fields:
-            blocks.append({"title": "Extra", "fields": extra_fields})
-
-        result["blocks"] = blocks
+        # relations
+        if operation == "part.decode":
+            result["relations"] = _build_relations_for_pn(decoded)
+        elif operation == "identifier.decode":
+            result["relations"] = _build_relations_for_id(decoded)
     else:
         result["device"] = None
         result["subtitle"] = None
@@ -147,13 +441,14 @@ def new_search_result(
     operation: str,
     query: str,
     items: list[dict[str, Any]],
+    lang: str = "eng",
 ) -> dict[str, Any]:
     """Build fdnext.result.v1 for search operations."""
     result: dict[str, Any] = {
         "schemaVersion": "fdnext.result.v1",
         "operation": operation,
         "status": "ok" if items else "not_found",
-        "input": {"query": query},
+        "input": {"query": query, "normalized": query.upper(), "lang": lang, "constraints": {}},
         "device": None,
         "subtitle": None,
         "blocks": [],
@@ -165,26 +460,68 @@ def new_search_result(
     }
 
     for item in items:
+        vendor_name = item.get("vendor", "?")
+        vendor_id = vendor_name.lower().replace(" ", "_") if vendor_name != "?" else "unknown"
+        pn = item.get("partNumber", "")
+
+        # device object
+        device: dict[str, Any] = {
+            "domain": "memory",
+            "chipKind": "raw_nand",
+            "vendor": {"id": vendor_id, "name": vendor_name},
+        }
+        if pn:
+            device["partNumber"] = pn
+
+        # badges
+        badges: list[str] = [vendor_name.title() if vendor_name else ""]
+        chip_kind = item.get("type", "")
+        if chip_kind:
+            badges.append(chip_kind)
+
+        # fields
         fields: list[dict[str, Any]] = []
-        for k in ("vendor", "partNumber", "type", "density", "cellLevel"):
+        for k in ("density", "cellLevel"):
             v = item.get(k)
             if v and v not in ("?", "Unknown", "未知", ""):
-                fields.append({"key": k, "value": str(v), "display": str(v)})
+                fields.append(_make_field(k, v, "primary"))
+
         result["items"].append({
+            "label": pn,
+            "device": device,
+            "badges": [b for b in badges if b],
             "fields": fields,
             "links": [],
         })
 
+    # add marking code relations for search results
+    for item in items:
+        pn = item.get("partNumber", "")
+        marking = item.get("markingCode") or item.get("m")
+        if marking and pn:
+            result["relations"].append({
+                "kind": "marking_for",
+                "source": {"markingCode": marking},
+                "target": {
+                    "partNumber": pn,
+                    "device": {
+                        "domain": "memory",
+                        "chipKind": "raw_nand",
+                        "partNumber": pn,
+                        "vendor": {"id": item.get("vendor", "").lower().replace(" ", "_"), "name": item.get("vendor", "")},
+                    },
+                },
+                "action": {
+                    "name": "part.decode",
+                    "label": "Decode Part",
+                    "operation": "part.decode",
+                    "input": {"query": pn},
+                },
+            })
+
     return result
 
 
-def _chip_kind(decoded: dict[str, Any]) -> str:
-    t = (decoded.get("type") or "").lower()
-    if "dram" in t:
-        return "dram"
-    if "nand" in t:
-        return "raw_nand"
-    return "unknown"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -204,7 +541,10 @@ def parts_decode(
 ):
     if not query:
         return {"status": "invalid_input", "name": SERVER_NAME, "message": "Missing query"}
-    decoded = decode_and_merge_pn(query, _manager, lang=lang)
+    try:
+        decoded = decode_and_merge_pn(query, _manager, lang=lang)
+    except Exception as e:
+        return {"status": "error", "name": SERVER_NAME, "message": str(e)}
     return new_decode_result("part.decode", query, decoded, lang)
 
 
@@ -216,8 +556,11 @@ def parts_search(
 ):
     if not query:
         return {"status": "invalid_input", "name": SERVER_NAME, "message": "Missing query"}
-    results = search_part_number(query, _manager, limit=limit, lang=lang)
-    return new_search_result("part.search", query, results)
+    try:
+        results = search_part_number(query, _manager, limit=limit, lang=lang)
+    except Exception as e:
+        return {"status": "error", "name": SERVER_NAME, "message": str(e)}
+    return new_search_result("part.search", query, results, lang)
 
 
 @app.get("/identifiers/decode")
@@ -227,7 +570,10 @@ def identifiers_decode(
 ):
     if not query:
         return {"status": "invalid_input", "name": SERVER_NAME, "message": "Missing query"}
-    decoded = decode_and_merge_id(query, _manager, lang=lang)
+    try:
+        decoded = decode_and_merge_id(query, _manager, lang=lang)
+    except Exception as e:
+        return {"status": "error", "name": SERVER_NAME, "message": str(e)}
     return new_decode_result("identifier.decode", query, decoded, lang)
 
 
@@ -239,24 +585,27 @@ def identifiers_search(
 ):
     if not query:
         return {"status": "invalid_input", "name": SERVER_NAME, "message": "Missing query"}
-    q = query.strip().upper()
-    fdb = load_fdb()
-    results: list[dict[str, Any]] = []
-    for vk, vm in fdb.items():
-        if vk == "info" or not isinstance(vm, dict):
-            continue
-        for pn, rec in vm.items():
-            ids = rec.get("id", [])
-            if isinstance(ids, list) and any(i.startswith(q) for i in ids):
-                entry = rec.copy()
-                entry["vendor"] = vk
-                entry["partNumber"] = pn
-                results.append(translate_output(entry, lang))
-                if limit > 0 and len(results) >= limit:
-                    break
-        if limit > 0 and len(results) >= limit:
-            break
-    return new_search_result("identifier.search", query, results)
+    try:
+        q = query.strip().upper()
+        fdb = load_fdb()
+        results: list[dict[str, Any]] = []
+        for vk, vm in fdb.items():
+            if vk == "info" or not isinstance(vm, dict):
+                continue
+            for pn, rec in vm.items():
+                ids = rec.get("id", [])
+                if isinstance(ids, list) and any(i.startswith(q) for i in ids):
+                    entry = rec.copy()
+                    entry["vendor"] = vk
+                    entry["partNumber"] = pn
+                    results.append(translate_output(entry, lang))
+                    if limit > 0 and len(results) >= limit:
+                        break
+            if limit > 0 and len(results) >= limit:
+                break
+        return new_search_result("identifier.search", query, results, lang)
+    except Exception as e:
+        return {"status": "error", "name": SERVER_NAME, "message": str(e)}
 
 
 # ── capabilities (pure JSON, fdnext.capabilities.v2) ─────────────
@@ -336,7 +685,10 @@ def old_decode(
 ):
     if not pn:
         return old_fail("Missing part number")
-    result = decode_and_merge_pn(pn, _manager, lang=lang)
+    try:
+        result = decode_and_merge_pn(pn, _manager, lang=lang)
+    except Exception as e:
+        return old_fail(f"Internal error: {e}")
     if result is None:
         return old_fail("Not found")
     return old_ok(result)
@@ -349,7 +701,10 @@ def old_decode_id(
 ):
     if not id:
         return old_fail("Missing Flash Id")
-    result = decode_and_merge_id(id, _manager, lang=lang)
+    try:
+        result = decode_and_merge_id(id, _manager, lang=lang)
+    except Exception as e:
+        return old_fail(f"Internal error: {e}")
     if result is None:
         return old_fail("Not found")
     return old_ok(result)
@@ -363,7 +718,10 @@ def old_search_pn(
     limit: int = Query(10, description="Max results"),
 ):
     query = pn or q or ""
-    results = search_part_number(query, _manager, limit=limit, lang=lang)
+    try:
+        results = search_part_number(query, _manager, limit=limit, lang=lang)
+    except Exception as e:
+        return old_fail(f"Internal error: {e}")
     return old_ok(results)
 
 
@@ -375,23 +733,26 @@ def old_search_id(
 ):
     if not id:
         return old_fail("Missing Flash Id")
-    q = id.strip().upper()
-    fdb = load_fdb()
-    results: list[dict[str, Any]] = []
-    for vk, vm in fdb.items():
-        if vk == "info" or not isinstance(vm, dict):
-            continue
-        for pn, rec in vm.items():
-            ids = rec.get("id", [])
-            if isinstance(ids, list) and any(i.startswith(q) for i in ids):
-                entry = rec.copy()
-                entry["vendor"] = vk
-                entry["partNumber"] = pn
-                results.append(translate_output(entry, lang))
-                if limit > 0 and len(results) >= limit:
-                    break
-        if limit > 0 and len(results) >= limit:
-            break
+    try:
+        q = id.strip().upper()
+        fdb = load_fdb()
+        results: list[dict[str, Any]] = []
+        for vk, vm in fdb.items():
+            if vk == "info" or not isinstance(vm, dict):
+                continue
+            for pn, rec in vm.items():
+                ids = rec.get("id", [])
+                if isinstance(ids, list) and any(i.startswith(q) for i in ids):
+                    entry = rec.copy()
+                    entry["vendor"] = vk
+                    entry["partNumber"] = pn
+                    results.append(translate_output(entry, lang))
+                    if limit > 0 and len(results) >= limit:
+                        break
+            if limit > 0 and len(results) >= limit:
+                break
+    except Exception as e:
+        return old_fail(f"Internal error: {e}")
     return old_ok(results)
 
 
@@ -402,7 +763,10 @@ def old_summary(
 ):
     if not pn:
         return old_fail("Missing part number")
-    result = decode_and_merge_pn(pn, _manager, lang=lang)
+    try:
+        result = decode_and_merge_pn(pn, _manager, lang=lang)
+    except Exception as e:
+        return old_fail(f"Internal error: {e}")
     if result is None:
         return old_fail("Not found")
     parts = [
@@ -421,7 +785,10 @@ def old_summary_id(
 ):
     if not id:
         return old_fail("Missing Flash Id")
-    result = decode_and_merge_id(id, _manager, lang=lang)
+    try:
+        result = decode_and_merge_id(id, _manager, lang=lang)
+    except Exception as e:
+        return old_fail(f"Internal error: {e}")
     if result is None:
         return old_fail("Not found")
     parts = [
