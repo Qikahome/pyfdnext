@@ -1,5 +1,5 @@
 """DRAM 解码器，通过 flash_extra API 查询并缓存结果到 ddb.json。"""
-from . import register, BaseDecoder
+from . import register, BaseDecoder, get_manager
 import requests
 import json
 import os
@@ -137,7 +137,7 @@ class DramDecoder(BaseDecoder):
         pn = pn.strip().upper()
         if not pn:
             return False
-        return pn.startswith(("NT", "H5", "K4"))
+        return pn.startswith(("NT", "H5", "K4", "DRAM"))
 
     def decode_pn(self, pn: str) -> dict | None:
         pn = pn.strip().upper()
@@ -146,7 +146,23 @@ class DramDecoder(BaseDecoder):
 
         full_pn = pn
 
-        # CT → MCT
+        # dram 前缀 → 先解前置码，是 DDR 直接返回，否则强制查 API
+        if full_pn.startswith("DRAM"):
+            stripped = full_pn[4:]
+            resolved = get_manager().decode_pn(stripped)
+            if resolved and "DDR" in str(resolved.get("type", "")):
+                return resolved
+            # 不是 DDR（如 Spectek NAND），用解码出的 partNumber 强制查 API
+            if resolved:
+                pn_from_code = resolved.get("partNumber", "")
+                if pn_from_code and pn_from_code != stripped:
+                    full_pn = pn_from_code
+                else:
+                    full_pn = stripped
+            else:
+                full_pn = stripped
+
+        # CT → MT（Micron 旧标）
         if full_pn.startswith("CT"):
             full_pn = "M" + full_pn[1:]
 
@@ -155,7 +171,7 @@ class DramDecoder(BaseDecoder):
         cached = ddb.get(full_pn)
         if cached:
             if "density" in cached:
-                width = int(cached.get("width", 8))
+                width = int(str(cached.get("width", "8")).lstrip("x"))
                 cached["density"] = _normalize_density(cached["density"], width)
             return cached
 
@@ -167,7 +183,7 @@ class DramDecoder(BaseDecoder):
         # 自动格式化 — 对齐到统一格式（API 字段首字母大写）
         detail = raw.get("detail", {})
         d = {k.lower(): v for k, v in detail.items()}
-        width = int(d.get("width", 8))
+        width = int(d.get("width", "8").lstrip("x"))
 
         # 厂商名归一化
         vendor_raw = raw.get("Vendor", "Unknown")

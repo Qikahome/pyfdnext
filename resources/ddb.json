@@ -28,5 +28,65 @@
       "die": 1
     },
     "density": "4Gb"
+  },
+  "NT5CC256M16ER-EK": {
+    "partNumber": "NT5CC256M16ER-EK",
+    "vendor": "南亚/Nanya",
+    "type": "DDR3",
+    "deviceWidth": "x16",
+    "voltage": "SSTL-135 (1.35V, 1.35V)",
+    "speed": "未知",
+    "package": "96-Ball BGA; DDR3",
+    "depth": "256M",
+    "generation": "5th version",
+    "classification": {
+      "die": 1
+    },
+    "density": "4Gb"
+  },
+  "DRAMNT5CC256M16ER-EK": {
+    "partNumber": "NT5CC256M16ER-EK",
+    "vendor": "南亚/Nanya",
+    "type": "DDR3",
+    "deviceWidth": "x16",
+    "voltage": "SSTL-135 (1.35V, 1.35V)",
+    "speed": "未知",
+    "package": "96-Ball BGA; DDR3",
+    "depth": "256M",
+    "generation": "5th version",
+    "classification": {
+      "die": 1
+    },
+    "density": "4Gb"
+  },
+  "K4A8G165WC": {
+    "partNumber": "K4A8G165WC",
+    "vendor": "三星/Samsung",
+    "type": "DDR4 SDRAM",
+    "deviceWidth": "x16",
+    "voltage": "Unknown",
+    "speed": "未知",
+    "package": "未知",
+    "depth": "Unknown",
+    "generation": "Unknown",
+    "classification": {
+      "die": 1
+    },
+    "density": "8Gb"
+  },
+  "DRAMK4A8G165WC": {
+    "partNumber": "K4A8G165WC",
+    "vendor": "三星/Samsung",
+    "type": "DDR4 SDRAM",
+    "deviceWidth": "x16",
+    "voltage": "Unknown",
+    "speed": "未知",
+    "package": "未知",
+    "depth": "Unknown",
+    "generation": "Unknown",
+    "classification": {
+      "die": 1
+    },
+    "density": "8Gb"
   }
 }
